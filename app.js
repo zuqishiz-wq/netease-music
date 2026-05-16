@@ -1,8 +1,7 @@
 // ============================================================
-// CloudMusic PWA — 网易云音乐个人听歌应用
+// CloudMusic PWA — 网易云音乐个人听歌应用 (离线缓存版)
 // ============================================================
 
-// API 地址：优先 localStorage，否则用 Render 云端地址
 let API_BASE = localStorage.getItem('api_base') || 'https://netease-api-09sq.onrender.com';
 
 async function api(path) {
@@ -12,12 +11,55 @@ async function api(path) {
 }
 
 // ============================================================
+// 音频缓存 (Cache API)
+// ============================================================
+const AUDIO_CACHE = 'cloudmusic-audio-v1';
+let cachedSongs = new Set(JSON.parse(localStorage.getItem('cached_songs') || '[]'));
+
+function saveCacheList() {
+  localStorage.setItem('cached_songs', JSON.stringify([...cachedSongs]));
+}
+
+async function cacheAudio(songId, url) {
+  try {
+    const cache = await caches.open(AUDIO_CACHE);
+    // 如果已缓存就跳过
+    if (await cache.match(`/audio/${songId}`)) return;
+    const res = await fetch(url);
+    if (res.ok) {
+      await cache.put(`/audio/${songId}`, res.clone());
+      cachedSongs.add(songId);
+      saveCacheList();
+      updateCacheIndicators();
+    }
+  } catch (e) {
+    console.error('缓存失败:', e);
+  }
+}
+
+async function getCachedAudio(songId) {
+  try {
+    const cache = await caches.open(AUDIO_CACHE);
+    const res = await cache.match(`/audio/${songId}`);
+    return res ? res.url : null;
+  } catch (e) { return null; }
+}
+
+async function removeCachedAudio(songId) {
+  const cache = await caches.open(AUDIO_CACHE);
+  await cache.delete(`/audio/${songId}`);
+  cachedSongs.delete(songId);
+  saveCacheList();
+  updateCacheIndicators();
+}
+
+// ============================================================
 // 状态
 // ============================================================
-let currentSong = null;           // 当前播放歌曲 { id, name, artist, cover, url }
+let currentSong = null;
 let isPlaying = false;
 let audio = new Audio();
-let playQueue = [];               // 播放队列
+let playQueue = [];
 let queueIndex = -1;
 let playlists = JSON.parse(localStorage.getItem('playlists') || '{}');
 
@@ -62,7 +104,6 @@ async function doSearch() {
     renderSongList(container, songs);
   } catch (e) {
     container.innerHTML = '<div class="empty-hint">搜索失败，检查后端是否运行</div>';
-    console.error(e);
   }
 }
 
@@ -79,17 +120,20 @@ function renderSongList(container, songs, playlistName = null) {
       <img class="song-cover" src="${s.cover || ''}" alt="" loading="lazy"
            onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2244%22 height=%2244%22><rect fill=%22%23333%22 width=%2244%22 height=%2244%22/><text fill=%22%23666%22 x=%2210%22 y=%2228%22 font-size=%2214%22>♪</text></svg>'">
       <div class="song-info">
-        <div class="song-name">${escapeHtml(s.name)}</div>
+        <div class="song-name">
+          ${cachedSongs.has(s.id) ? '<span class="cached-badge">💾</span> ' : ''}${escapeHtml(s.name)}
+        </div>
         <div class="song-artist">${escapeHtml(s.artist)}${s.album ? ' · ' + escapeHtml(s.album) : ''}</div>
       </div>
-      <button class="song-more" data-id="${s.id}" title="添加到歌单">+</button>
+      <button class="song-more" data-id="${s.id}" title="缓存到本地">⬇</button>
+      <button class="song-add" data-id="${s.id}" title="添加到歌单">+</button>
     </div>
   `).join('');
 
   // 点击播放
   container.querySelectorAll('.song-item').forEach(item => {
     item.addEventListener('click', e => {
-      if (e.target.classList.contains('song-more')) return;
+      if (e.target.classList.contains('song-more') || e.target.classList.contains('song-add')) return;
       const i = +item.dataset.index;
       playQueue = songs;
       queueIndex = i;
@@ -97,14 +141,37 @@ function renderSongList(container, songs, playlistName = null) {
     });
   });
 
-  // 添加到歌单
+  // 下载按钮
   container.querySelectorAll('.song-more').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = +btn.dataset.id;
+      const song = songs.find(s => s.id === id);
+      if (song) {
+        btn.textContent = '⏳';
+        await downloadSong(song);
+        btn.textContent = cachedSongs.has(id) ? '💾' : '⬇';
+      }
+    });
+  });
+
+  // 添加到歌单
+  container.querySelectorAll('.song-add').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const id = btn.dataset.id;
-      const song = songs.find(s => s.id == id);
+      const id = +btn.dataset.id;
+      const song = songs.find(s => s.id === id);
       if (song) showAddToPlaylistModal(song);
     });
+  });
+
+  updateCacheIndicators();
+}
+
+function updateCacheIndicators() {
+  document.querySelectorAll('.song-more').forEach(btn => {
+    const id = +btn.dataset.id;
+    btn.textContent = cachedSongs.has(id) ? '💾' : '⬇';
   });
 }
 
@@ -115,37 +182,68 @@ function escapeHtml(s) {
 }
 
 // ============================================================
+// 下载歌曲到本地
+// ============================================================
+async function downloadSong(song) {
+  try {
+    const data = await api(`/song/url?id=${song.id}&level=standard`);
+    const url = data.data?.[0]?.url;
+    if (!url) {
+      toast('该歌曲无可用播放源，可能需在家 WiFi 下载');
+      return;
+    }
+    await cacheAudio(song.id, url);
+    toast(`已缓存: ${song.name}`);
+  } catch (e) {
+    toast('下载失败，请在家 WiFi 下操作');
+  }
+}
+
+// ============================================================
 // 播放器
 // ============================================================
 async function playSong(song) {
   currentSong = song;
   document.getElementById('player-bar').classList.remove('hidden');
-
-  // 更新迷你播放条
   document.getElementById('player-cover').src = song.cover || '';
   document.getElementById('player-title').textContent = song.name;
   document.getElementById('player-artist').textContent = song.artist;
-
-  // 更新展开页
   document.getElementById('player-cover-large').src = song.cover || '';
   document.getElementById('player-title-large').textContent = song.name;
   document.getElementById('player-artist-large').textContent = song.artist;
 
-  // 获取播放链接
+  // 1. 先检查本地缓存
+  const cachedUrl = await getCachedAudio(song.id);
+  if (cachedUrl) {
+    audio.src = cachedUrl;
+    audio.play();
+    isPlaying = true;
+    updatePlayButtons();
+    // 后台更新缓存
+    try {
+      const data = await api(`/song/url?id=${song.id}&level=standard`);
+      const url = data.data?.[0]?.url;
+      if (url) cacheAudio(song.id, url);
+    } catch(e) {}
+    return;
+  }
+
+  // 2. 尝试远程获取并缓存
   try {
     const data = await api(`/song/url?id=${song.id}&level=standard`);
     const url = data.data?.[0]?.url;
     if (!url) {
-      toast('该歌曲暂无播放源');
+      toast('无播放源。请在家 WiFi 下先下载此歌曲');
       return;
     }
     audio.src = url;
     audio.play();
     isPlaying = true;
     updatePlayButtons();
+    // 后台缓存
+    cacheAudio(song.id, url);
   } catch (e) {
     toast('获取播放链接失败');
-    console.error(e);
   }
 }
 
@@ -160,31 +258,18 @@ document.getElementById('btn-play-large').addEventListener('click', togglePlay);
 
 function togglePlay() {
   if (!audio.src) return;
-  if (isPlaying) {
-    audio.pause();
-    isPlaying = false;
-  } else {
-    audio.play();
-    isPlaying = true;
-  }
+  if (isPlaying) { audio.pause(); isPlaying = false; }
+  else { audio.play(); isPlaying = true; }
   updatePlayButtons();
 }
 
-// 上一首/下一首
 document.getElementById('btn-prev').addEventListener('click', () => {
-  if (queueIndex > 0) {
-    queueIndex--;
-    playSong(playQueue[queueIndex]);
-  }
+  if (queueIndex > 0) { queueIndex--; playSong(playQueue[queueIndex]); }
 });
 document.getElementById('btn-next').addEventListener('click', () => {
-  if (queueIndex < playQueue.length - 1) {
-    queueIndex++;
-    playSong(playQueue[queueIndex]);
-  }
+  if (queueIndex < playQueue.length - 1) { queueIndex++; playSong(playQueue[queueIndex]); }
 });
 
-// 展开/收起播放器
 document.getElementById('player-bar-click').addEventListener('click', () => {
   document.getElementById('player-full').classList.remove('hidden');
 });
@@ -192,18 +277,11 @@ document.getElementById('player-collapse').addEventListener('click', () => {
   document.getElementById('player-full').classList.add('hidden');
 });
 
-// 播放结束自动下一首
 audio.addEventListener('ended', () => {
-  if (queueIndex < playQueue.length - 1) {
-    queueIndex++;
-    playSong(playQueue[queueIndex]);
-  } else {
-    isPlaying = false;
-    updatePlayButtons();
-  }
+  if (queueIndex < playQueue.length - 1) { queueIndex++; playSong(playQueue[queueIndex]); }
+  else { isPlaying = false; updatePlayButtons(); }
 });
 
-// 进度更新
 audio.addEventListener('timeupdate', () => {
   if (!audio.duration) return;
   const pct = (audio.currentTime / audio.duration) * 100;
@@ -213,18 +291,15 @@ audio.addEventListener('timeupdate', () => {
   document.getElementById('time-total').textContent = formatTime(audio.duration);
 });
 
-// 点击进度条
 document.getElementById('progress-track').addEventListener('click', e => {
   if (!audio.duration) return;
   const rect = e.currentTarget.getBoundingClientRect();
-  const pct = (e.clientX - rect.left) / rect.width;
-  audio.currentTime = pct * audio.duration;
+  audio.currentTime = ((e.clientX - rect.left) / rect.width) * audio.duration;
 });
 
 function formatTime(s) {
   const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return m + ':' + (sec < 10 ? '0' : '') + sec;
+  return m + ':' + (Math.floor(s % 60) < 10 ? '0' : '') + Math.floor(s % 60);
 }
 
 // ============================================================
@@ -243,8 +318,7 @@ function createPlaylist(name) {
 
 function addToPlaylist(playlistName, song) {
   if (!playlists[playlistName]) playlists[playlistName] = [];
-  const exists = playlists[playlistName].some(s => s.id === song.id);
-  if (exists) { toast('已在歌单中'); return; }
+  if (playlists[playlistName].some(s => s.id === song.id)) { toast('已在歌单中'); return; }
   playlists[playlistName].push(song);
   savePlaylists();
   toast(`已添加到「${playlistName}」`);
@@ -283,7 +357,6 @@ function renderPlaylists() {
   document.getElementById('playlist-back').style.display = 'none';
   document.getElementById('new-playlist-btn').style.display = '';
   container.style.display = '';
-
   const names = Object.keys(playlists);
   if (names.length === 0) {
     container.innerHTML = '<div class="empty-hint">还没有歌单，点击上方按钮创建</div>';
@@ -298,15 +371,11 @@ function renderPlaylists() {
       <button class="song-more" data-delete="${escapeHtml(name)}">🗑</button>
     </div>
   `).join('');
-
   container.querySelectorAll('.playlist-click').forEach(el => {
     el.addEventListener('click', () => renderPlaylistSongs(el.dataset.name));
   });
   container.querySelectorAll('[data-delete]').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      deletePlaylist(btn.dataset.delete);
-    });
+    btn.addEventListener('click', e => { e.stopPropagation(); deletePlaylist(btn.dataset.delete); });
   });
 }
 
@@ -316,8 +385,7 @@ function renderPlaylistSongs(name) {
   document.getElementById('playlist-back').style.display = '';
   const container = document.getElementById('playlist-songs');
   container.style.display = '';
-  const songs = playlists[name] || [];
-  renderSongList(container, songs, name);
+  renderSongList(container, playlists[name] || [], name);
 }
 
 // ============================================================
@@ -364,8 +432,8 @@ function toast(msg) {
 // 初始化
 // ============================================================
 renderPlaylists();
+updateCacheIndicators();
 
-// 注册 Service Worker
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');
 }

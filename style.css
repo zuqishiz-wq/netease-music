@@ -131,6 +131,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.cached-badge { font-size:12px; }
 .song-artist {
   font-size: 13px;
   color: var(--text-secondary);
