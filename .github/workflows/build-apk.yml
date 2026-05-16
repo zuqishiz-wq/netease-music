@@ -6,31 +6,35 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with: { node-version: '22' }
+
       - uses: actions/setup-java@v4
         with: { distribution: 'temurin', java-version: '17' }
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install bubblewrap
-        run: npm install -g @bubblewrap/cli
+      - name: Install Capacitor
+        run: npm init -y && npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Init TWA
+      - name: Create Android project
         run: |
-          bubblewrap init --manifest https://zuqishiz-wq.github.io/netease-music/manifest.json
+          npx cap init CloudMusic com.cloudmusic.app --web-dir .
+          npx cap add android
 
-      - name: Build APK
-        run: bubblewrap build
+      - name: Build debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: cloudmusic-apk
-          path: |
-            app/release/*.apk
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/debug/*.apk
-            **/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
