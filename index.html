@@ -19,6 +19,7 @@
     <h1 class="title">CloudMusic</h1>
     <nav class="tabs">
       <button class="tab active" data-tab="search">🔍 搜索</button>
+      <button class="tab" data-tab="local">💿 本地</button>
       <button class="tab" data-tab="playlist">📁 歌单</button>
     </nav>
   </header>
@@ -31,6 +32,16 @@
     </div>
     <div id="search-results" class="song-list"></div>
     <div id="search-empty" class="empty-hint">输入关键词搜索歌曲</div>
+  </main>
+
+  <!-- 本地音乐页 -->
+  <main id="tab-local" class="tab-content">
+    <div class="search-box">
+      <input type="text" id="local-search-input" placeholder="搜索本地歌曲..." autocomplete="off">
+      <button id="local-search-btn">搜索</button>
+    </div>
+    <div id="local-results" class="song-list"></div>
+    <div id="local-empty" class="empty-hint">本地音乐（共 <span id="local-count">0</span> 首），连接 WiFi 加载</div>
   </main>
 
   <!-- 歌单页 -->

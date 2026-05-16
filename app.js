@@ -106,6 +106,38 @@ document.getElementById('search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') doSearch();
 });
 
+// ── 本地音乐 ──
+let localSongs = [];
+
+async function loadLocalSongs() {
+  try {
+    const data = await api('/local/list', true);
+    localSongs = (data.songs || []).map(s => ({
+      ...s,
+      cover: '',
+      album: s.dir ? s.dir.split('/').pop() : '本地',
+      url: `${API_LOCAL}/local/stream?f=${encodeURIComponent(s.file)}`
+    }));
+    document.getElementById('local-count').textContent = localSongs.length;
+    renderSongList(document.getElementById('local-results'), localSongs);
+  } catch(e) {
+    document.getElementById('local-empty').textContent = '无法连接本地 API，请检查 WiFi';
+  }
+}
+
+document.getElementById('local-search-btn').addEventListener('click', () => {
+  const q = document.getElementById('local-search-input').value.trim().toLowerCase();
+  const filtered = q ? localSongs.filter(s => s.name.toLowerCase().includes(q)) : localSongs;
+  renderSongList(document.getElementById('local-results'), filtered);
+});
+
+document.getElementById('local-search-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('local-search-btn').click();
+});
+
+// 标签切换时加载本地音乐
+document.querySelector('[data-tab="local"]').addEventListener('click', loadLocalSongs);
+
 async function doSearch() {
   const q = document.getElementById('search-input').value.trim();
   if (!q) return;
@@ -239,6 +271,15 @@ async function playSong(song) {
 
   // 异步加载歌词
   fetchLyrics(song.id);
+
+  // 0. 本地歌曲直接播放
+  if (song.url && song.url.includes('/local/stream')) {
+    audio.src = song.url;
+    audio.play();
+    isPlaying = true;
+    updatePlayButtons();
+    return;
+  }
 
   // 1. 先检查本地缓存
   const cachedUrl = await getCachedAudio(song.id);
