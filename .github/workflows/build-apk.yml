@@ -6,32 +6,38 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with: { node-version: '22' }
-
-      - uses: actions/setup-java@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with: { distribution: 'temurin', java-version: '17' }
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Capacitor
-        run: npm init -y && npm install @capacitor/core @capacitor/cli @capacitor/android
-
-      - name: Create Android project
         run: |
-          npx cap init CloudMusic com.cloudmusic.app --web-dir .
-          npx cap add android
+          ANDROID_SDK="$HOME/android-sdk"
+          echo "ANDROID_HOME=$ANDROID_SDK" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK" >> $GITHUB_ENV
+          mkdir -p "$ANDROID_SDK/cmdline-tools"
+          curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/sdk.zip
+          unzip -q /tmp/sdk.zip -d "$ANDROID_SDK/cmdline-tools"
+          mv "$ANDROID_SDK/cmdline-tools/cmdline-tools" "$ANDROID_SDK/cmdline-tools/latest"
+          yes | "$ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK" --licenses > /dev/null 2>&1
+          "$ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK" "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null 2>&1
 
-      - name: Build debug APK
+      - name: Build Capacitor APK
         run: |
+          npm init -y > /dev/null 2>&1
+          npm install @capacitor/core @capacitor/cli @capacitor/android > /dev/null 2>&1
+          npx cap init CloudMusic com.cloudmusic.app --web-dir . 2>&1 || true
+          npx cap add android 2>&1
           cd android
-          ./gradlew assembleDebug
+          chmod +x gradlew
+          ./gradlew assembleDebug 2>&1
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
