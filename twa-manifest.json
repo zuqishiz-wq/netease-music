@@ -1,0 +1,17 @@
+{
+  "packageId": "com.cloudmusic.app",
+  "host": "zuqishiz-wq.github.io",
+  "name": "CloudMusic",
+  "launcherName": "CloudMusic",
+  "display": "standalone",
+  "themeColor": "#1a1a2e",
+  "backgroundColor": "#0f0f1a",
+  "startUrl": "/netease-music",
+  "iconUrl": "https://zuqishiz-wq.github.io/netease-music/icon-512.png",
+  "maskableIconUrl": "https://zuqishiz-wq.github.io/netease-music/icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "alias": "cloudmusic",
+    "name": "cloudmusic"
+  }
+}
