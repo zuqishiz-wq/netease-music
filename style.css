@@ -306,6 +306,39 @@ body {
   background: var(--accent);
   font-size: 24px;
 }
+.ctrl-btn.mode-btn {
+  font-size: 14px;
+  width: 40px;
+  height: 40px;
+}
+
+/* ── Lyrics ── */
+.lyrics-container {
+  width: 100%;
+  max-height: 35vh;
+  overflow-y: auto;
+  margin-top: 4px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: center;
+}
+.lyrics-container.hidden { display: none; }
+.lyrics-content {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 2.2;
+  white-space: pre-wrap;
+}
+.lyric-line {
+  transition: all 0.3s;
+  cursor: default;
+}
+.lyric-line.active {
+  color: var(--accent-light);
+  font-size: 16px;
+  font-weight: 600;
+}
 
 /* ── Playlist ── */
 .playlist-header { margin: 16px 0; }
