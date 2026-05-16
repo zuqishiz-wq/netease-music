@@ -3,8 +3,15 @@
 // ============================================================
 
 let API_BASE = localStorage.getItem('api_base') || 'https://netease-api-09sq.onrender.com';
+let API_LOCAL = 'http://10.78.51.231:3000';
 
-async function api(path) {
+async function api(path, useLocal = false) {
+  if (useLocal) {
+    try {
+      const res = await fetch(API_LOCAL + path, { signal: AbortSignal.timeout(3000) });
+      if (res.ok) return res.json();
+    } catch(e) {}
+  }
   const res = await fetch(API_BASE + path);
   if (!res.ok) throw new Error('API error: ' + res.status);
   return res.json();
@@ -186,7 +193,7 @@ function escapeHtml(s) {
 // ============================================================
 async function downloadSong(song) {
   try {
-    const data = await api(`/song/url?id=${song.id}&level=standard`);
+    const data = await api(`/song/url?id=${song.id}&level=standard`, true);
     const url = data.data?.[0]?.url;
     if (!url) {
       toast('该歌曲无可用播放源，可能需在家 WiFi 下载');
@@ -228,9 +235,9 @@ async function playSong(song) {
     return;
   }
 
-  // 2. 尝试远程获取并缓存
+  // 2. 尝试获取播放链接（优先本地API）并缓存
   try {
-    const data = await api(`/song/url?id=${song.id}&level=standard`);
+    const data = await api(`/song/url?id=${song.id}&level=standard`, true);
     const url = data.data?.[0]?.url;
     if (!url) {
       toast('无播放源。请在家 WiFi 下先下载此歌曲');
